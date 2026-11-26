@@ -1,0 +1,100 @@
+# CTF Writeup — StegoRSA
+
+*Author: Natenapa Srimek · 2026-11-25*
+
+The RSA private key was hidden as hex in the JPEG comment of the provided image; extracting it allowed direct decryption of the flag.
+
+| Field | Value |
+| --- | --- |
+| Platform / Event | CyLab Academy |
+| Category | Cryptography |
+| Difficulty | Easy |
+| Files given | `flag.enc`, `image.jpg` |
+| Tools | `file`, `exiftool`, `xxd`, `openssl` (Kali Linux) |
+
+## 1. Challenge Description
+> A message has been encrypted using RSA. The public key is gone… but someone might have been careless with the private key. Can you recover it and decrypt the message?
+
+## 2. Initial Recon
+```bash
+file flag.enc image.jpg
+```
+```
+flag.enc:  data
+image.jpg: JPEG image data, JFIF standard 1.01, aspect ratio, density 1x1, segment length 16, comment: "2d2d2d2d2d424547494e2050524956415445204b45592d2d2d2d2d0a4d494945765149424144414e42676b71686b6947397730424151454641415343424b63", baseline, precision 8, 512x512, components 3
+```
+Observations:
+- `flag.enc` is raw binary data, i.e. the RSA ciphertext.
+- `image.jpg` carries an unusually long hex string in its JPEG comment.
+- `2d2d2d2d2d` decodes to `-----`, and the start of the string decodes to `-----BEGIN PRIVATE KEY-----`.
+
+## 3. Key Insight
+- "Careless with the private key" means the key was leaked somewhere, and the only other file given is the image.
+- RSA ciphertext is decrypted with the private key (`m = c^d mod n`). With the key in hand, no attack on RSA's math is needed.
+- JPEG comments can hold arbitrary text without changing how the image looks, which makes them a common hiding spot.
+
+## 4. Solution
+1. **Extract the full comment and convert hex to text** — `file` only shows the beginning of the comment, so pull it raw with `exiftool -b` and reverse the hex with `xxd -r -p`.
+    ```bash
+    exiftool -b -Comment image.jpg | xxd -r -p > private.pem
+    ```
+    Input (hex from the JPEG comment):
+    ```
+    2d2d2d2d2d424547494e2050524956415445204b45592d2d2d2d2d0a4d494945765149424144414e42676b71686b6947397730424151454641415343424b63776767536a41674541416f49424151444e4247583339685161664f525a0a7a3147306c4a37697a48786c4556686e3964334562656c585158326770736a666a53654457517a4469775a464f3545524538467a567a6c3147685163636f67520a466f4948344b644b7871657a636a7069462f706572487653426442372f76586f3144796642517475464c7778426d54592b52622f6e39505674756a6f4b6f654a0a7765793864356b34542b6675775535724b39516776732b705377735436376377727a4b426b713046756a757237774873485771545561764564444154514957430a7a3569506b445738496d774b664b6969334a6d567145746155653365414349376a615a39446d7674493674665454506a346b39765a7075466f444a7930646d430a31687770584d7769514a356a6b5536714a7942375045646b7a39532b6a554534454e6b4356476e4c5032624b376541336465576e354e52544a767170684272450a4f4d4a6a644b645a41674d42414145436767454146572b684b30586f4b485259536e456f513375364b4b2f566a6c6f377a6f507050416437657a3936583553730a776c34506a48626752435a61515a306d722f7a4c4d48434662684a723261556168384864467536464132636c772f676374574b354c354b306b42744352794b370a697378394b616e552f6632755279683658537266506874546f6f4142566e775335364d5769676174787a4c6f707544416e716c4b6f4f46656c463648736831320a6736652b67383332644e62367879656875613578572f6c646e516f39436a674a5763446b496e7a32357a557854335a56626b44624d4a7868794a685a313631530a2b73494265745836544e37735645357336507258704853332f714734673466366d6769484c7133334834537656555a41653955706244774758415936494575650a737a53324c7a6e52776e6379496d4d3735354663484930774d526e346c7142484f786162315a765467514b4267514470575565306e61617364456d564b5a38740a6337773045355732523866444e5a374347766b6f4e46782f34304b72674f6b45716f55675a583578646d332b2b624b75757a5047334d2f56366e79447a7135680a596d35643247696d38653041716531305859447273514350382f37797a7a68376930716a3739796e2f5a414a4b6673626d316a68533879314634705570677a7a0a5844764b7962424c43347770614957506a7a6943707a533332514b42675144673678514c4731414563544f4c6652496d534f597355346f426d724b416f3863300a506b566b454a78453437663654737535756f65436e324a57636d3447584a7434596737527335612b6733576879574d2f33434e4c5866704242517043633573570a4a50704a504832384c6443394645524a506977616955466545634e67345a3630575a556a6975416e6b6a7234355466324a4a4f6e4e316f64672b70506d454c6b0a7341526b3459303767514b42674155764a706973702f644d336857695278634c617a4c382f47614155622f5567534a7531766f397235426e7a434e6a53636f410a7639526f624e613465746b6655776a757638653751434c5167744f7130395432437432713453685556352b634a7470652b5735444548416953356535597466620a3046793042344c7a3779394537333839684576394578387931712f717748376e6e61787a727162384b7245413058625042384a66564a7942416f4741644e4f470a4b4c4b3649475351536e376667345651455777652f6642566b5a34415a624747703541394b306442453849443765666d5a55485765574b637061394b6a67415a0a4248474d396b34674e72583957486c47312b6e72694152504c4f3852656a496730784f5a6c376f516433586b646b725636373670646d77786d4d763466474d660a70554f495a4f562b766a4f4a6d732b713569744a49705758696c706a504a66303446574c333445436759454178413065724d7145437a79685544396e345043500a784f6d693350753353316758674e74774651752f79784b482b676a384d41662f6e6566596f2b6f7169352b74514c5a5559724e3639755830736738736834386a0a316a58543337496a6137474c354973752b677373615361354e4e3875767a725652724668547073626e356f7949615578356a425961424f57542f39444f73356b0a7159585761392f6e587a78613438776b596d71354f4b453d0a2d2d2d2d2d454e442050524956415445204b45592d2d2d2d2d0a
+    ```
+    Output (`cat private.pem`):
+    ```
+    -----BEGIN PRIVATE KEY-----
+    MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDNBGX39hQafORZ
+    z1G0lJ7izHxlEVhn9d3EbelXQX2gpsjfjSeDWQzDiwZFO5ERE8FzVzl1GhQccogR
+    FoIH4KdKxqezcjpiF/perHvSBdB7/vXo1DyfBQtuFLwxBmTY+Rb/n9PVtujoKoeJ
+    wey8d5k4T+fuwU5rK9Qgvs+pSwsT67cwrzKBkq0Fujur7wHsHWqTUavEdDATQIWC
+    z5iPkDW8ImwKfKii3JmVqEtaUe3eACI7jaZ9DmvtI6tfTTPj4k9vZpuFoDJy0dmC
+    1hwpXMwiQJ5jkU6qJyB7PEdkz9S+jUE4ENkCVGnLP2bK7eA3deWn5NRTJvqphBrE
+    OMJjdKdZAgMBAAECggEAFW+hK0XoKHRYSnEoQ3u6KK/Vjlo7zoPpPAd7ez96X5Ss
+    wl4PjHbgRCZaQZ0mr/zLMHCFbhJr2aUah8HdFu6FA2clw/gctWK5L5K0kBtCRyK7
+    isx9KanU/f2uRyh6XSrfPhtTooABVnwS56MWigatxzLopuDAnqlKoOFelF6Hsh12
+    g6e+g832dNb6xyehua5xW/ldnQo9CjgJWcDkInz25zUxT3ZVbkDbMJxhyJhZ161S
+    +sIBetX6TN7sVE5s6PrXpHS3/qG4g4f6mgiHLq33H4SvVUZAe9UpbDwGXAY6IEue
+    szS2LznRwncyImM755FcHI0wMRn4lqBHOxab1ZvTgQKBgQDpWUe0naasdEmVKZ8t
+    c7w0E5W2R8fDNZ7CGvkoNFx/40KrgOkEqoUgZX5xdm3++bKuuzPG3M/V6nyDzq5h
+    Ym5d2Gim8e0Aqe10XYDrsQCP8/7yzzh7i0qj79yn/ZAJKfsbm1jhS8y1F4pUpgzz
+    XDvKybBLC4wpaIWPjziCpzS32QKBgQDg6xQLG1AEcTOLfRImSOYsU4oBmrKAo8c0
+    PkVkEJxE47f6Tsu5uoeCn2JWcm4GXJt4Yg7Rs5a+g3WhyWM/3CNLXfpBBQpCc5sW
+    JPpJPH28LdC9FERJPiwaiUFeEcNg4Z60WZUjiuAnkjr45Tf2JJOnN1odg+pPmELk
+    sARk4Y07gQKBgAUvJpisp/dM3hWiRxcLazL8/GaAUb/UgSJu1vo9r5BnzCNjScoA
+    v9RobNa4etkfUwjuv8e7QCLQgtOq09T2Ct2q4ShUV5+cJtpe+W5DEHAiS5e5Ytfb
+    0Fy0B4Lz7y9E7389hEv9Ex8y1q/qwH7nnaxzrqb8KrEA0XbPB8JfVJyBAoGAdNOG
+    KLK6IGSQSn7fg4VQEWwe/fBVkZ4AZbGGp5A9K0dBE8ID7efmZUHWeWKcpa9KjgAZ
+    BHGM9k4gNrX9WHlG1+nriARPLO8RejIg0xOZl7oQd3XkdkrV676pdmwxmMv4fGMf
+    pUOIZOV+vjOJms+q5itJIpWXilpjPJf04FWL34ECgYEAxA0erMqECzyhUD9n4PCP
+    xOmi3Pu3S1gXgNtwFQu/yxKH+gj8MAf/nefYo+oqi5+tQLZUYrN69uX0sg8sh48j
+    1jXT37Ija7GL5Isu+gssaSa5NN8uvzrVRrFhTpsbn5oyIaUx5jBYaBOWT/9DOs5k
+    qYXWa9/nXzxa48wkYmq5OKE=
+    -----END PRIVATE KEY-----
+    ```
+2. **Verify the key is a valid RSA key** — make sure the extraction didn't corrupt it before using it.
+    ```bash
+    openssl rsa -in private.pem -check -noout
+    ```
+    ```
+    RSA key ok
+    ```
+3. **Decrypt the flag with the private key**
+    ```bash
+    openssl pkeyutl -decrypt -inkey private.pem -in flag.enc
+    ```
+    ```
+    academy{rs4_k3y_****}
+    ```
+
+## 5. Flag
+```
+academy{rs4_k3y_****}
+```
+
+## 6. Lessons Learned
+- Technique: in crypto challenges, inspect every supplied file's metadata (`file`, `exiftool`, `strings`, `binwalk`) before attacking the math.
+- Technique: the hex `2d2d2d2d2d` (`-----`) almost always marks the start of a PEM key or certificate.
+- Technique: `openssl pkeyutl -decrypt` is the standard way to decrypt with an RSA key; if it fails, try other `rsa_padding_mode` values (`oaep`, `none`).
+- Real-world impact / mitigation: a leaked private key breaks RSA completely, no matter the key size. Keep private keys out of shared files, images and Git repos, store them in a secrets manager or HSM, and rotate any key that has been exposed.
